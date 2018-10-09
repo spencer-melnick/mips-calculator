@@ -42,6 +42,10 @@ main:
 	jal 	lex_convert
 	jal	validate_expression
 	
+	li	$a0, 0
+	li	$a1, 512
+	jal	evaluate_expression
+	
 	j	main_end
 
 	# Display invalid character and location
@@ -481,5 +485,125 @@ validate_expression_next_itr:
 
 validate_expression_exit:
 	jr	$ra
-
 	
+	########################################################
+	# End validate_expression
+	########################################################
+	
+
+	########################################################
+	# evaluate_expression
+	########################################################
+	#
+	# evaluate_expression evaluates the expression stored
+	# in expr_buffer1 between offsets $a0 and $a1 (inclusive)
+	# and replaces all tokens except the first token with
+	# skips. The first token is replaced with the expression
+	# result.
+evaluate_expression:
+	# $t0 as token index
+	# $t1 as token type
+	# $t2 as token value
+	# $t3 as operand 1
+	# $t4 as operand 2
+	# $t5 as operator
+	# $t6 as paren counter
+	# $t8 as $a0
+	# $t9 as $a1
+	
+	# Push to the stack
+	addiu	$sp, $sp, -44
+	sw	$ra, 0($sp)
+	sw	$t0, 4($sp)
+	sw	$t1, 8($sp)
+	sw	$t2, 12($sp)
+	sw	$t3, 16($sp)
+	sw	$t4, 20($sp)
+	sw	$t5, 24($sp)
+	sw	$t6, 28($sp)
+	sw	$t7, 32($sp)
+	sw	$t8, 36($sp)
+	sw	$t9, 40($sp)
+	
+	# Load initial values
+	move	$t0, $a0
+	li	$t1, 0
+	li	$t2, 0
+	li	$t3, 0
+	li	$t4, 0
+	li	$t5, 0
+	li	$t6, 0
+	move	$t8, $a0
+	move	$t9, $a1		
+	
+	# First, find any parentheses and recursively solve those
+evaluate_expression_paren_loop:
+	# Check if we've reached the end
+	bge	$t0, $t9, evaluate_expression_paren_end
+
+	# Load token and token type
+	lw	$t2, expr_buffer1($t0)
+	srl	$t1, $t2, 16
+	
+	# Check for end token
+	beq	$t1, 0, evaluate_expression_paren_end
+	
+	# Check for skip token
+	beq	$t1, 10, evaluate_expression_paren_next_itr
+	
+	# Check for (
+	bne	$t1, 1, evaluate_expression_not_open_paren
+	
+	# Increment paren counter
+	addiu	$t6, $t6, 1
+	
+	# If this is the first open paren
+	bne	$t6, 1, evaluate_expression_paren_next_itr
+	# Store index of (
+	move	$a0, $t0
+	j	evaluate_expression_paren_next_itr
+	
+evaluate_expression_not_open_paren:
+	# Check for )
+	bne	$t1, 2, evaluate_expression_not_close_paren
+	
+	# Decrement paren counter
+	subiu	$t6, $t6, 1
+	
+	# If paren counter is 0
+	bnez	$t6, evaluate_expression_paren_next_itr
+	
+	# Store index of )
+	move	$a1, $t0
+	jal	evaluate_expression
+	j evaluate_expression_paren_next_itr
+
+evaluate_expression_not_close_paren:
+	
+	
+evaluate_expression_paren_next_itr:
+	addiu	$t0, $t0, 4
+	j	evaluate_expression_paren_loop
+
+evaluate_expression_paren_end:
+	
+evaluate_expression_exit:
+	# Pop from the stack
+	lw	$ra, 0($sp)
+	lw	$t0, 4($sp)
+	lw	$t1, 8($sp)
+	lw	$t2, 12($sp)
+	lw	$t3, 16($sp)
+	lw	$t4, 20($sp)
+	lw	$t5, 24($sp)
+	lw	$t6, 28($sp)
+	lw	$t7, 32($sp)
+	lw	$t8, 36($sp)
+	lw	$t9, 40($sp)
+	addiu	$sp, $sp, 44
+	
+	jr	$ra
+	
+	########################################################
+	# End evaluate_expression
+	########################################################
