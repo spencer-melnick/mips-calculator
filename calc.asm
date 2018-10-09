@@ -68,7 +68,7 @@ invalid_expression:
 	j	main_end
 	
 main_end:
-	j	main_end
+	j	main
 	
 
 	# lex_convert converts a string to tokens representing
@@ -88,6 +88,7 @@ main_end:
 	# Token type 7 - = operator
 	# Token type 8 - variable
 	# Token type 9 - numeric literal
+	# Token type 10 - skip token
 	#
 	# Only numeric literals and variables have token values
 	#
@@ -132,6 +133,8 @@ lex_convert_state_0:
 	beq	$t1, '\0', lex_convert_end
 	beq	$t1, '\n', lex_convert_end
 
+	# If ' ', skip
+	beq	$t1, ' ', lex_convert_next_itr
 
 	# Check if number
 	blt	$t1, '0', lex_convert_state_0_not_num
@@ -195,8 +198,21 @@ lex_convert_state_0_not_mult:
 	j	lex_convert_store_token
 
 lex_convert_state_0_not_div:
-	# If ' ' skip, otherwise, invalid character
-	beq	$t1, ' ', lex_convert_next_itr
+	# Check if uppercase letter
+	blt	$t1, 'A', lex_convert_not_character
+	ble	$t1, 'Z', lex_convert_store_character
+	blt	$t1, 'a', lex_convert_not_character
+	ble	$t1, 'z', lex_convert_store_character
+
+	j lex_convert_not_character
+
+lex_convert_store_character:
+	# Store variable token
+	lui	$t4, 8
+	or	$t4, $t4, $t1
+	j	lex_convert_store_token
+
+lex_convert_not_character:
 
 	j	invalid_character
 	
