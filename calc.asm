@@ -435,6 +435,8 @@ validate_expression_not_variable:
 	# Increment paren counter
 	addiu	$t3, $t3, 1
 	
+	j	validate_expression_next_itr
+	
 validate_expression_not_open_paren:
 	# Check if )
 	bne	$t7, 2, validate_expression_not_close_paren
@@ -456,7 +458,20 @@ validate_expression_not_open_paren:
 	# Can't have /)
 	beq	$t6, 6, invalid_expression
 	
+	j	validate_expression_next_itr
+	
 validate_expression_not_close_paren:
+	# Check for * or /
+	blt	$t7, 5, validate_expression_not_mult_or_divide
+	bgt	$t7, 6, validate_expression_not_mult_or_divide	
+
+	# * or / can only be preceeded by a number or variable
+	# (or skip)
+	blt	$t6, 8, invalid_expression
+	
+	j	validate_expression_next_itr
+
+validate_expression_not_mult_or_divide:
 
 	j	validate_expression_next_itr
 	
