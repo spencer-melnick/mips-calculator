@@ -15,6 +15,11 @@ invalid_char_msg_p2:
 invalid_char_msg_p3:
 	.asciiz "]\n"
 
+invalid_num_msg_p1:
+	.asciiz "Numeral length exceeds 4 at index ["
+invalid_num_msg_p2:
+	.asciiz "]\n"
+
 .text
 main:
 	# Print prompt message
@@ -56,6 +61,24 @@ invalid_character:
 	# Display message part 3
 	li	$v0, 4
 	la	$a0, invalid_char_msg_p3
+	syscall
+
+	j	main_end
+
+invalid_numeral:
+	# Display message part 1
+	li	$v0, 4
+	la	$a0, invalid_num_msg_p1
+	syscall
+
+	# Display index
+	li	$v0, 1
+	move	$a0, $t0
+	syscall
+
+	# Display message part 2
+	li	$v0, 4
+	la	$a0, invalid_num_msg_p2
 	syscall
 
 	j	main_end
@@ -102,12 +125,11 @@ lex_convert:
 	# $t2 as FSM state
 	# $t3 as token index
 	# $t4 as token value
+	# $t5 as numeral length
 	#
 	# Machne states are as follows:
 	# State 0 - reading
-	# State 1 - read basic token
-	# State 2 - reading number
-	# State 3 - read variable
+	# State 1 - reading number
 	
 	# Initialize registers
 	li	$t0, 0
@@ -115,6 +137,7 @@ lex_convert:
 	li	$t2, 0
 	li	$t3, 0
 	li	$t4, 0
+	li	$t5, 0
 
 lex_convert_loop:
 	# Read next character
@@ -122,9 +145,7 @@ lex_convert_loop:
 	
 	# Jump to machine state
 	beq	$t2, 0, lex_convert_state_0
-	#beq	$t2, 1, lex_convert_state_1
-	beq	$t2, 2, lex_convert_state_2
-	#beq	$t2, 3, lex_convert_state_3
+	beq	$t2, 1, lex_convert_state_1
 
 
 # Initial reading state
@@ -141,7 +162,10 @@ lex_convert_state_0:
 	bgt	$t1, '9', lex_convert_state_0_not_num
 	
 	# Set FSM state to number reading
-	li	$t2, 2
+	li	$t2, 1
+
+	# Set numeral length to 1
+	li	$t5, 1
 	
 	# Convert character to number
 	subiu	$t4, $t1, '0'
@@ -198,13 +222,21 @@ lex_convert_state_0_not_mult:
 	j	lex_convert_store_token
 
 lex_convert_state_0_not_div:
+	# Check if =
+	bne	$t1, '=', lex_convert_state_0_not_equals
+
+	# Store / token
+	lui 	$t4, 7
+	j	lex_convert_store_token
+
+lex_convert_state_0_not_equals:
 	# Check if uppercase letter
 	blt	$t1, 'A', lex_convert_not_character
 	ble	$t1, 'Z', lex_convert_store_character
 	blt	$t1, 'a', lex_convert_not_character
 	ble	$t1, 'z', lex_convert_store_character
 
-	j lex_convert_not_character
+	j 	lex_convert_not_character
 
 lex_convert_store_character:
 	# Store variable token
@@ -218,12 +250,16 @@ lex_convert_not_character:
 	
 	
 # Numeric reading state
-lex_convert_state_2:
+lex_convert_state_1:
 	# If not a number, move to state exit
-	blt	$t1, '0', lex_convert_state_2_exit
-	bgt	$t1, '9', lex_convert_state_2_exit
+	blt	$t1, '0', lex_convert_state_1_exit
+	bgt	$t1, '9', lex_convert_state_1_exit
 	
-	# Otherwise, increment stored token value
+	# Otherwise, check numeral length
+	addiu	$t5, $t5, 1
+	bgt	$t5, 4, invalid_numeral
+	
+	# Increment stored token value
 	mulu	$t4, $t4, 10
 	
 	# Convert $t0 to digit
@@ -234,7 +270,7 @@ lex_convert_state_2:
 	
 	j lex_convert_next_itr
 
-lex_convert_state_2_exit:	
+lex_convert_state_1_exit:	
 	# Put token type in upper 16 bits
 	lui	$t7, 9
 	or	$t4, $t4, $t7
