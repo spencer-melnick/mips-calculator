@@ -6,7 +6,14 @@ expr_buffer1:
 prompt_msg:
 	.asciiz ">>>> "
 invalid_msg:
-	.asciiz "Invalid expression"
+	.asciiz "Invalid expression\n"
+
+invalid_char_msg_p1:
+	.asciiz "Invalid character \""
+invalid_char_msg_p2:
+	.asciiz "\" at index ["
+invalid_char_msg_p3:
+	.asciiz "]\n"
 
 .text
 main:
@@ -22,6 +29,35 @@ main:
 	syscall
 	
 	jal 	lex_convert
+	j	main_end
+
+	# Display invalid character and location
+invalid_character:
+	# Display message part 1
+	li	$v0, 4
+	la	$a0, invalid_char_msg_p1
+	syscall
+
+	# Display character
+	li	$v0, 11
+	move	$a0, $t1
+	syscall
+
+	# Display message part 2
+	li	$v0, 4
+	la	$a0, invalid_char_msg_p2
+	syscall
+
+	# Display index
+	li	$v0, 1
+	move	$a0, $t0
+	syscall
+	
+	# Display message part 3
+	li	$v0, 4
+	la	$a0, invalid_char_msg_p3
+	syscall
+
 	j	main_end
 	
 invalid_expression:
@@ -107,33 +143,62 @@ lex_convert_state_0:
 	# Convert character to number
 	subiu	$t4, $t1, '0'
 	
+	j	lex_convert_next_itr
+	
 lex_convert_state_0_not_num:
 	# Check if (
 	bne	$t1, '(', lex_convert_state_0_not_open_paren
 	
 	# Store ( token
 	lui	$t4, 1
-	sw	$t4, expr_buffer1($t3)
-	addiu	$t3, $t3, 4
-	
-	# Jump to next iteration
-	j	lex_convert_next_itr
+	j	lex_convert_store_token
 	
 lex_convert_state_0_not_open_paren:
-	# Check f )
+	# Check if )
 	bne	$t1, ')', lex_convert_state_0_not_close_paren
 	
 	# Store ) token
 	lui	$t4, 2
-	sw	$t4, expr_buffer1($t3)
-	addiu	$t3, $t3, 4
-	
-	# Jump to next iteration
-	j	lex_convert_next_itr
+	j	lex_convert_store_token
 	
 lex_convert_state_0_not_close_paren:
+	# Check if +
+	bne 	$t1, '+', lex_convert_state_0_not_plus
 	
-	j	lex_convert_next_itr
+	# Store + token
+	lui 	$t4, 3
+	j	lex_convert_store_token
+
+lex_convert_state_0_not_plus:
+	# Check if -
+	bne	$t1, '-', lex_convert_state_0_not_minus
+
+	# Store - token
+	lui 	$t4, 4
+	j	lex_convert_store_token
+
+
+lex_convert_state_0_not_minus:
+	# Check if *
+	bne	$t1, '*', lex_convert_state_0_not_mult
+
+	# Store * token
+	lui 	$t4, 5
+	j	lex_convert_store_token
+
+lex_convert_state_0_not_mult:
+	# Check if /
+	bne	$t1, '/', lex_convert_state_0_not_div
+
+	# Store / token
+	lui 	$t4, 6
+	j	lex_convert_store_token
+
+lex_convert_state_0_not_div:
+	# If ' ' skip, otherwise, invalid character
+	beq	$t1, ' ', lex_convert_next_itr
+
+	j	invalid_character
 	
 	
 # Numeric reading state
@@ -163,6 +228,14 @@ lex_convert_state_2_exit:
 	# Move back to state 0 without looping
 	li	$t2, 0
 	j lex_convert_state_0
+
+lex_convert_store_token:
+	# Store token and increment token index
+	sw	$t4, expr_buffer1($t3)
+	addiu	$t3, $t3, 4
+
+	# Jump to next iteration
+	j	lex_convert_next_itr
 	
 lex_convert_next_itr:
 	addiu $t0, $t0, 1
