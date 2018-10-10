@@ -517,6 +517,9 @@ validate_expression_not_end:
 	# Cannot follow a number
 	beq	$t6, 10, invalid_expression
 	
+	# Cannot follow another variable
+	beq	$t6, 9, invalid_expression
+	
 	j	validate_expression_next_itr
 	
 validate_expression_not_variable:
@@ -567,7 +570,10 @@ validate_expression_not_close_paren:
 
 validate_expression_not_mult_or_divide:
 	bne	$t7, 10, validate_expression_next_itr
+	
+	# Number preceeded by number or variable is invalid
 	beq	$t6, 10, invalid_expression
+	beq	$t6, 9, invalid_expression
 	
 	j	validate_expression_next_itr
 	
