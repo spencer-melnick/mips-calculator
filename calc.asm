@@ -33,6 +33,9 @@ invalid_lhs_msg:
 	
 invalid_paren_msg:
 	.asciiz "Mismatched parentheses\n"
+	
+divide_by_zero_msg:
+	.asciiz "Divide by zero error\n"
 
 .text
 main:
@@ -137,6 +140,13 @@ invalid_expression:
 	syscall
 	j	main_end
 	
+divide_by_zero:
+	# Print error message
+	li	$v0, 4
+	la	$a0, divide_by_zero_msg
+	syscall
+	j	main_end
+	
 main_end:
 	j	main
 	
@@ -159,15 +169,19 @@ main_end:
 	# Token type 4 - - operator
 	# Token type 5 - * operator
 	# Token type 6 - / operator
-	# Token type 7 - = operator
-	# Token type 8 - variable
-	# Token type 9 - numeric literal
-	# Token type 10 - skip token
+	# Token type 7 - negate operator
+	# Token type 8 - = operator
+	# Token type 9 - variable
+	# Token type 10 - numeric literal
 	#
 	# Numeric literals and variables have token values
 	# representing either their numeric value or variable
 	# name. Operators have token values equal to their
 	# operator precedence.
+	#
+	# The most significant bit of the token value for a
+	# variable represents whether or not to negate the
+	# variable.
 	#
 	# No arguments are needed:
 	# The string is read from str_buffer1 and
@@ -181,7 +195,6 @@ lex_convert:
 	# $t4 as token value
 	# $t5 as numeral length
 	# $t6 as previous token type
-	# $t7 as sign
 	#
 	# Machine states are as follows:
 	# State 0 - reading
@@ -195,7 +208,6 @@ lex_convert:
 	li	$t4, 0
 	li	$t5, 0
 	li	$t6, 0
-	li	$t7, 1
 
 lex_convert_loop:
 	# Read next character
@@ -257,7 +269,7 @@ lex_convert_state_0_not_close_paren:
 	# If previous token was an operator or left paren
 	# skip
 	ble	$t6, 1, lex_convert_next_itr
-	bgt	$t6, 7, lex_convert_state_0_plus_passed_check
+	bgt	$t6, 8, lex_convert_state_0_plus_passed_check
 	bne	$t6, 2, lex_convert_next_itr
 	
 lex_convert_state_0_plus_passed_check:
@@ -272,14 +284,17 @@ lex_convert_state_0_not_plus:
 	bne	$t1, '-', lex_convert_state_0_not_minus
 
 	# If previous token was an operator, left paren,
-	# or empty, skip and set sign to negative
+	# or empty, add an inversion operator
 	ble	$t6, 1, lex_convert_state_0_invert_sign
-	bgt	$t6, 7, lex_convert_state_0_minus_passed_check
+	bgt	$t6, 8, lex_convert_state_0_minus_passed_check
 	bne	$t6, 2, lex_convert_state_0_invert_sign
 	
 lex_convert_state_0_invert_sign:
-	sub	$t7, $zero, $t7
-	j	lex_convert_next_itr
+	# Store invert token
+	li	$t6, 7
+	lui	$t4, 7
+	ori	$t4, 3
+	j	lex_convert_store_token
 	
 lex_convert_state_0_minus_passed_check:
 	# Store - token
@@ -313,9 +328,9 @@ lex_convert_state_0_not_div:
 	# Check if =
 	bne	$t1, '=', lex_convert_state_0_not_equals
 
-	# Store / token
-	li	$t6, 7
-	lui 	$t4, 7
+	# Store = token
+	li	$t6, 8
+	lui 	$t4, 8
 	ori	$t4, $t4, 4
 	j	lex_convert_store_token
 
@@ -330,8 +345,8 @@ lex_convert_state_0_not_equals:
 
 lex_convert_store_character:
 	# Store variable token
-	li	$t6, 8
-	lui	$t4, 8
+	li	$t6, 9
+	lui	$t4, 9
 	or	$t4, $t4, $t1
 	j	lex_convert_store_token
 
@@ -362,15 +377,9 @@ lex_convert_state_1:
 	j lex_convert_next_itr
 
 lex_convert_state_1_exit:
-	# Invert numeral literal if sign is negative
-	bgt	$t7, 0, lex_convert_state_1_not_neg
-	sub	$t4, $zero, $t4
-	andi	$t4, $t4, 0xffff
-
-lex_convert_state_1_not_neg:
 	# Put token type in upper 16 bits
-	li	$t6, 9
-	lui	$t8, 9
+	li	$t6, 10
+	lui	$t8, 10
 	or	$t4, $t4, $t8
 	sw	$t4, expr_buffer1($t3)
 	addiu	$t3, $t3, 4
@@ -383,9 +392,6 @@ lex_convert_store_token:
 	# Store token and increment token index
 	sw	$t4, expr_buffer1($t3)
 	addiu	$t3, $t3, 4
-
-	# Reset sign
-	li	$t7, 1
 
 	# Jump to next iteration
 	j	lex_convert_next_itr
@@ -441,22 +447,23 @@ validate_expression:
 	li	$t3, 0
 	li	$t6, 0
 	li	$t7, 0
+	move	$t9, $s0
 	li	$s2, 0
 
 	# Check if expr[0] is =
 	lw 	$t2, expr_buffer1
 	srl	$t2, $t2, 16
-	beq	$t2, 7, invalid_lhs
+	beq	$t2, 8, invalid_lhs
 
 	# Check if expr[1] is =
 	lw 	$t2, expr_buffer1+4
 	srl	$t2, $t2, 16
-	bne	$t2, 7, validate_expression_loop_start
+	bne	$t2, 8, validate_expression_loop_start
 
 	# Check if expr[0] is a variable
 	lw	$t2, expr_buffer1
 	srl	$t7, $t2, 16
-	bne	$t7, 8, invalid_lhs
+	bne	$t7, 9, invalid_lhs
 
 	# Set variable name
 	andi	$t9, $t2, 0xffff
@@ -492,10 +499,10 @@ validate_expression_loop:
 	
 validate_expression_not_end:
 	# Check for extra =
-	beq	$t7, 7, invalid_expression
+	beq	$t7, 8, invalid_expression
 	
 	# Check for variable
-	bne	$t7, 8, validate_expression_not_variable
+	bne	$t7, 9, validate_expression_not_variable
 	
 	# Get current token variable name
 	andi	$t5, $t2, 0xffff
@@ -507,7 +514,7 @@ validate_expression_not_end:
 	beq	$t6, 2, invalid_expression
 	
 	# Cannot follow a number
-	beq	$t6, 9, invalid_expression
+	beq	$t6, 10, invalid_expression
 	
 	j	validate_expression_next_itr
 	
@@ -540,6 +547,8 @@ validate_expression_not_open_paren:
 	beq	$t6, 5, invalid_expression
 	# Can't have /)
 	beq	$t6, 6, invalid_expression
+	# Can't have -)
+	beq	$t6, 7, invalid_expression
 	
 	j	validate_expression_next_itr
 	
@@ -551,7 +560,7 @@ validate_expression_not_close_paren:
 	# * or / can only be preceeded by a number, variable
 	# or close paren
 	beq	$t6, 2, validate_expression_next_itr
-	blt	$t6, 8, invalid_expression
+	blt	$t6, 9, invalid_expression
 	
 	j	validate_expression_next_itr
 
@@ -586,7 +595,7 @@ convert_expr:
 	# $t1 as token
 	# $t2 as token type
 	# $t3 as token output index
-	# $t4, $t5 as temp
+	# $t4, $t5, $t6 as temp
 	# $t8 as stack pointer
 	# $t9 as stack top token
 	move	$t0, $s2
@@ -605,7 +614,7 @@ convert_expr_loop:
 	beq	$t2, 0, convert_expr_exit
 
 	# Check if literal or variable
-	blt	$t2, 8, convert_expr_not_value
+	blt	$t2, 9, convert_expr_not_value
 
 	# Store in ouput
 	sw	$t1, expr_buffer2($t3)
@@ -661,14 +670,20 @@ convert_expr_operator:
 	
 	# Use $t4 as current token precedence
 	# $t5 as stack token precedence
+	# $t6 as stack token type
 	convert_expr_inner_loop2:
 		# Get stack token precedence
 		andi	$t5, $t9, 0xffff
 
 		# If current token has higher precedence
 		# than stack token, or stack is at end,
+		# or both tokens are invert,
 		# exit loop
 		beq	$t8, 0, convert_expr_inner_loop2_end
+		bne	$t2, 7, convert_expr_no_negate_token
+		srl	$t6, $t9, 16
+		beq	$t6, 7, convert_expr_inner_loop2_end
+	convert_expr_no_negate_token:
 		bgt	$t4, $t5, convert_expr_inner_loop2_end
 
 		# Otherwise pop stack onto result
@@ -747,7 +762,7 @@ evaluate_expr_loop:
 	beq	$t2, 0, evaluate_expr_exit
 
 	# Check for operator
-	bgt	$t2, 7, evaluate_expr_no_op
+	bgt	$t2, 8, evaluate_expr_no_op
 
 	# Load operands from stack
 	addiu	$t8, $t8, -4
@@ -781,34 +796,31 @@ evaluate_expr_no_sub:
 evaluate_expr_no_mult:
 	# Perform / operation and store on stack
 	bne	$t2, 6, evaluate_expr_no_div
+	beqz	$t4, divide_by_zero
 	div	$t3, $t3, $t4
 	sw	$t3, stack($t8)
 	addiu	$t8, $t8, 4
 	j 	evaluate_expr_next_itr
 
 evaluate_expr_no_div:
-	# Should be unreachable
-	j	evaluate_expr_next_itr
+	# Perform negate operation and store on stack
+	bne	$t2, 7, evaluate_expr_next_itr
+	sub	$t4, $zero, $t4
+	sw	$t3, stack($t8)
+	addiu	$t8, $t8, 4
+	sw	$t4, stack($t8)
+	addiu	$t8, $t8, 4
+	j 	evaluate_expr_next_itr
 
 evaluate_expr_no_op:
-	bne	$t2, 8, evaluate_expr_no_variable
+	bne	$t2, 9, evaluate_expr_no_variable
 	# Push stored variable to stack
 	sw	$s1, stack($t8)
 	addiu	$t8, $t8, 4
 	j 	evaluate_expr_next_itr
 
 evaluate_expr_no_variable:
-	# Push to stack
-	andi	$t1, $t1, 0xffff
-	
-	# Check sign bit
-	andi	$t5, $t1, 0x8000
-	beqz	$t5, evaluate_expr_not_negative
-	
-	# Pad sign
-	ori	$t1, $t1, 0xffff0000
-
-evaluate_expr_not_negative:
+	andi	$t1, 0xffff
 	sw	$t1, stack($t8)
 	addiu	$t8, $t8, 4
 
