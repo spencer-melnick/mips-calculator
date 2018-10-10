@@ -52,6 +52,11 @@ main:
 	jal	convert_expr
 	jal	evaluate_expr
 	
+	
+	beqz	$s2, display_result
+	#If $s2 is nonzero, assign temp variable
+	move	$s1, $v0
+display_result:	
 	# Display result
 	move	$a0, $v0
 	li	$v0, 1
@@ -377,6 +382,10 @@ lex_convert_end:
 	#
 	# validate_expression will jump unconditionally if
 	# there are any errors
+	#
+	# The variable name will be stored in $s0
+	# If the expression is an assignment, then 8 will
+	# be stored in $s2
 validate_expression:
 	# $t0 as token index
 	# $t1 as previous token
@@ -384,6 +393,7 @@ validate_expression:
 	# $t3 as paren counter
 	# $t6 as previous token type
 	# $t7 as current token type
+	# $t9 as new variable name
 	# $s0 as variable name
 	li	$t0, 0
 	li	$t1, 0
@@ -391,6 +401,7 @@ validate_expression:
 	li	$t3, 0
 	li	$t6, 0
 	li	$t7, 0
+	li	$s2, 0
 
 	# Check if expr[0] is =
 	lw 	$t2, expr_buffer1
@@ -408,10 +419,12 @@ validate_expression:
 	bne	$t7, 8, invalid_lhs
 
 	# Set variable name
-	andi	$s0, $t2, 0xffff
+	andi	$t9, $t2, 0xffff
 
 	# Set token index to 2
 	li	$t0, 8
+	li	$s2, 8
+
 	j	validate_expression_loop_start
 
 validate_expression_loop_start:
@@ -511,6 +524,7 @@ validate_expression_next_itr:
 	j	validate_expression_loop
 
 validate_expression_exit:
+	move	$s0, $t9
 	jr	$ra
 	
 	########################################################
@@ -535,7 +549,7 @@ convert_expr:
 	# $t4, $t5 as temp
 	# $t8 as stack pointer
 	# $t9 as stack top token
-	li	$t0, 0
+	move	$t0, $s2
 	li	$t1, 0
 	li	$t2, 0
 	li	$t3, 0
@@ -689,7 +703,7 @@ evaluate_expr_loop:
 	srl	$t2, $t1, 16
 
 	# Check for end token
-	beq	$t2, 0, evalute_expr_exit
+	beq	$t2, 0, evaluate_expr_exit
 
 	# Check for operator
 	bgt	$t2, 7, evaluate_expr_no_op
@@ -705,7 +719,7 @@ evaluate_expr_loop:
 	add	$t3, $t3, $t4
 	sw	$t3, stack($t8)
 	addiu	$t8, $t8, 4
-	j 	evalute_expr_next_itr
+	j 	evaluate_expr_next_itr
 
 evaluate_expr_no_add:
 	# Perform - operation and store on stack
@@ -713,7 +727,7 @@ evaluate_expr_no_add:
 	sub	$t3, $t3, $t4
 	sw	$t3, stack($t8)
 	addiu	$t8, $t8, 4
-	j 	evalute_expr_next_itr
+	j 	evaluate_expr_next_itr
 
 evaluate_expr_no_sub:
 	# Perform * operation and store on stack
@@ -721,7 +735,7 @@ evaluate_expr_no_sub:
 	mul	$t3, $t3, $t4
 	sw	$t3, stack($t8)
 	addiu	$t8, $t8, 4
-	j 	evalute_expr_next_itr
+	j 	evaluate_expr_next_itr
 
 evaluate_expr_no_mult:
 	# Perform / operation and store on stack
@@ -729,24 +743,31 @@ evaluate_expr_no_mult:
 	div	$t3, $t3, $t4
 	sw	$t3, stack($t8)
 	addiu	$t8, $t8, 4
-	j 	evalute_expr_next_itr
+	j 	evaluate_expr_next_itr
 
 evaluate_expr_no_div:
 	# Should be unreachable
-	j	evalute_expr_next_itr
+	j	evaluate_expr_next_itr
 
 evaluate_expr_no_op:
+	bne	$t2, 8, evaluate_expr_no_variable
+	# Push stored variable to stack
+	sw	$s1, stack($t8)
+	addiu	$t8, $t8, 4
+	j 	evaluate_expr_next_itr
+
+evaluate_expr_no_variable:
 	# Push to stack
 	andi	$t1, $t1, 0xffff
 	sw	$t1, stack($t8)
 	addiu	$t8, $t8, 4
 
-evalute_expr_next_itr:
+evaluate_expr_next_itr:
 	addiu	$t0, $t0, 4
 	j evaluate_expr_loop
 
 
-evalute_expr_exit:
+evaluate_expr_exit:
 	# Pop from the top of the stack
 	lw	$v0, stack
 	jr	$ra
