@@ -574,6 +574,8 @@ validate_expression_next_itr:
 	j	validate_expression_loop
 
 validate_expression_exit:
+	blt	$t6, 9, invalid_expression
+
 	move	$s0, $t9
 	jr	$ra
 	
