@@ -566,7 +566,9 @@ validate_expression_not_close_paren:
 	j	validate_expression_next_itr
 
 validate_expression_not_mult_or_divide:
-
+	bne	$t7, 10, validate_expression_next_itr
+	beq	$t6, 10, invalid_expression
+	
 	j	validate_expression_next_itr
 	
 validate_expression_next_itr:
@@ -574,8 +576,10 @@ validate_expression_next_itr:
 	j	validate_expression_loop
 
 validate_expression_exit:
+	beq	$t6, 2, validate_expression_final_check_passed
 	blt	$t6, 9, invalid_expression
 
+validate_expression_final_check_passed:
 	move	$s0, $t9
 	jr	$ra
 	
