@@ -506,7 +506,7 @@ evaluate_expression:
 	# $t2 as token value
 	# $t3 as operand 1
 	# $t4 as operand 2
-	# $t5 as operator
+	# $t5 as operator bit
 	# $t6 as paren counter
 	# $t8 as $a0
 	# $t9 as $a1
@@ -549,7 +549,7 @@ evaluate_expression_paren_loop:
 	beq	$t1, 0, evaluate_expression_paren_end
 	
 	# Check for skip token
-	beq	$t1, 10, evaluate_expression_paren_next_itr
+	bne	$t1, 10, evaluate_expression_paren_next_itr
 	
 	# Check for (
 	bne	$t1, 1, evaluate_expression_not_open_paren
@@ -580,12 +580,60 @@ evaluate_expression_not_open_paren:
 
 evaluate_expression_not_close_paren:
 	
-	
 evaluate_expression_paren_next_itr:
 	addiu	$t0, $t0, 4
 	j	evaluate_expression_paren_loop
 
 evaluate_expression_paren_end:
+	# $t0 as token index
+	# $t1 as token type
+	# $t2 as token value
+	# $t3 as operand 1
+	# $t4 as operand 2
+	# $t5 as operator bit
+	# $t6 as op 1 index
+	# $t7 as op 2 index
+	# $t8 as $a0
+	# $t9 as $a1
+	move	$t0, $t8
+	li	$t1, 0
+	li	$t2, 0
+	li	$t3, 0
+	li	$t4, 0
+	li	$t5, 0
+	li	$t6, 0
+
+evaluate_expression_mult_divide_loop:
+	# Check if we've reached the end
+	bge	$t0, $t9, evaluate_expression_mult_divide_end
+
+	# Load token and token type
+	lw	$t2, expr_buffer1($t0)
+	srl	$t1, $t2, 16
+	andi	$t2, $t2, 0xffff
+	
+	# Check for end token
+	beq	$t1, 0, evaluate_expression_mult_divide_end
+	
+	# Check for skip token
+	bne	$t1, 10, evaluate_expression_mult_divide_next_itr
+	
+	# If operator bit isn't set
+	bnez	$t5, evaluate_expression_mult_divide_op_set
+	
+	# Store operand value and index
+	move	$t3, $t2
+	move	$t6, $t0
+	
+	j evaluate_expression_mult_divide_next_itr
+	
+evaluate_expression_mult_divide_op_set:
+
+evaluate_expression_mult_divide_next_itr:
+	addiu	$t0, $t0, 4
+	j	evaluate_expression_mult_divide_loop
+	
+evaluate_expression_mult_divide_loop_end:
 	
 evaluate_expression_exit:
 	# Pop from the stack
@@ -607,3 +655,5 @@ evaluate_expression_exit:
 	########################################################
 	# End evaluate_expression
 	########################################################
+	
+
