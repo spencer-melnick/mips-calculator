@@ -13,6 +13,8 @@ prompt_msg:
 	.asciiz ">>>> "
 invalid_msg:
 	.asciiz "Invalid expression\n"
+result_msg:
+	.asciiz "\n"
 
 invalid_char_msg_p1:
 	.asciiz "Invalid character \""
@@ -48,6 +50,17 @@ main:
 	jal 	lex_convert
 	jal	validate_expression
 	jal	convert_expr
+	jal	evaluate_expr
+	
+	# Display result
+	move	$a0, $v0
+	li	$v0, 1
+	syscall
+	
+	# Print result message
+	li	$v0, 4
+	la	$a0, result_msg
+	syscall
 	
 	j	main_end
 
@@ -482,8 +495,9 @@ validate_expression_not_close_paren:
 	blt	$t7, 5, validate_expression_not_mult_or_divide
 	bgt	$t7, 6, validate_expression_not_mult_or_divide	
 
-	# * or / can only be preceeded by a number or variable
-	# (or skip)
+	# * or / can only be preceeded by a number, variable
+	# or close paren
+	beq	$t6, 2, validate_expression_next_itr
 	blt	$t6, 8, invalid_expression
 	
 	j	validate_expression_next_itr
@@ -606,8 +620,9 @@ convert_expr_operator:
 		# Otherwise pop stack onto result
 		sw	$t9, expr_buffer2($t3)
 		addiu	$t3, $t3, 4
-		addiu	$t8, $t8, -4
+		addiu	$t8, $t8, -8
 		lw	$t9, stack($t8)
+		addiu	$t8, $t8, 4
 
 		j convert_expr_inner_loop2
 
@@ -631,8 +646,9 @@ convert_expr_exit:
 		# Otherwise pop from the stack onto result
 		sw	$t9, expr_buffer2($t3)
 		addiu	$t3, $t3, 4
-		addiu	$t8, $t8, -4
+		addiu	$t8, $t8, -8
 		lw	$t9, stack($t8)
+		addiu	$t8, $t8, 4
 
 		j convert_expr_inner_loop3
 		
@@ -640,3 +656,98 @@ convert_expr_exit:
 		sw	$zero, expr_buffer2($t3)
 
 	jr	$ra
+
+	#####################################################
+	# End convert_expr
+	#####################################################
+
+
+
+	#####################################################
+	# evaluate_expr
+	#####################################################
+	#
+	# evaluate_expr evaluates the postfix expression
+	# stored in expr_buffer2
+evaluate_expr:
+	# $t0 as token index
+	# $t1 as token
+	# $t2 as token type
+	# $t3 as operand 1
+	# $t4 as operand 2
+	# $t8 as stack pointer
+	li	$t0, 0
+	li	$t1, 0
+	li	$t2, 0
+	li	$t3, 0
+	li	$t4, 0
+	li	$t8, 0
+
+evaluate_expr_loop:
+	# Load token
+	lw	$t1, expr_buffer2($t0)
+	srl	$t2, $t1, 16
+
+	# Check for end token
+	beq	$t2, 0, evalute_expr_exit
+
+	# Check for operator
+	bgt	$t2, 7, evaluate_expr_no_op
+
+	# Load operands from stack
+	addiu	$t8, $t8, -4
+	lw	$t4, stack($t8)
+	addiu	$t8, $t8, -4
+	lw	$t3, stack($t8)
+
+	# Perform + operation and store on stack
+	bne	$t2, 3, evaluate_expr_no_add
+	add	$t3, $t3, $t4
+	sw	$t3, stack($t8)
+	addiu	$t8, $t8, 4
+	j 	evalute_expr_next_itr
+
+evaluate_expr_no_add:
+	# Perform - operation and store on stack
+	bne	$t2, 4, evaluate_expr_no_sub
+	sub	$t3, $t3, $t4
+	sw	$t3, stack($t8)
+	addiu	$t8, $t8, 4
+	j 	evalute_expr_next_itr
+
+evaluate_expr_no_sub:
+	# Perform * operation and store on stack
+	bne	$t2, 5, evaluate_expr_no_mult
+	mul	$t3, $t3, $t4
+	sw	$t3, stack($t8)
+	addiu	$t8, $t8, 4
+	j 	evalute_expr_next_itr
+
+evaluate_expr_no_mult:
+	# Perform / operation and store on stack
+	bne	$t2, 6, evaluate_expr_no_div
+	div	$t3, $t3, $t4
+	sw	$t3, stack($t8)
+	addiu	$t8, $t8, 4
+	j 	evalute_expr_next_itr
+
+evaluate_expr_no_div:
+	# Should be unreachable
+	j	evalute_expr_next_itr
+
+evaluate_expr_no_op:
+	# Push to stack
+	andi	$t1, $t1, 0xffff
+	sw	$t1, stack($t8)
+	addiu	$t8, $t8, 4
+
+evalute_expr_next_itr:
+	addiu	$t0, $t0, 4
+	j evaluate_expr_loop
+
+
+evalute_expr_exit:
+	# Pop from the top of the stack
+	lw	$v0, stack
+	jr	$ra
+	
