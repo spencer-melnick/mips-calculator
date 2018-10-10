@@ -270,7 +270,7 @@ lex_convert_state_0_not_close_paren:
 	# skip
 	ble	$t6, 1, lex_convert_next_itr
 	bgt	$t6, 8, lex_convert_state_0_plus_passed_check
-	bne	$t6, 2, lex_convert_next_itr
+	beq	$t6, 2, lex_convert_state_0_plus_passed_check
 	
 lex_convert_state_0_plus_passed_check:
 	# Store + token
@@ -287,7 +287,7 @@ lex_convert_state_0_not_plus:
 	# or empty, add an inversion operator
 	ble	$t6, 1, lex_convert_state_0_invert_sign
 	bgt	$t6, 8, lex_convert_state_0_minus_passed_check
-	bne	$t6, 2, lex_convert_state_0_invert_sign
+	beq	$t6, 2, lex_convert_state_0_minus_passed_check
 	
 lex_convert_state_0_invert_sign:
 	# Store invert token
