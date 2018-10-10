@@ -180,8 +180,10 @@ lex_convert:
 	# $t3 as token index
 	# $t4 as token value
 	# $t5 as numeral length
+	# $t6 as previous token type
+	# $t7 as sign
 	#
-	# Machne states are as follows:
+	# Machine states are as follows:
 	# State 0 - reading
 	# State 1 - reading number
 	
@@ -192,6 +194,8 @@ lex_convert:
 	li	$t3, 0
 	li	$t4, 0
 	li	$t5, 0
+	li	$t6, 0
+	li	$t7, 1
 
 lex_convert_loop:
 	# Read next character
@@ -231,6 +235,7 @@ lex_convert_state_0_not_num:
 	bne	$t1, '(', lex_convert_state_0_not_open_paren
 	
 	# Store ( token
+	li	$t6, 1
 	lui	$t4, 1
 	ori	$t4, $t4, 0
 	j	lex_convert_store_token
@@ -240,6 +245,7 @@ lex_convert_state_0_not_open_paren:
 	bne	$t1, ')', lex_convert_state_0_not_close_paren
 	
 	# Store ) token
+	li	$t6, 2
 	lui	$t4, 2
 	ori	$t4, $t4, 0
 	j	lex_convert_store_token
@@ -247,8 +253,16 @@ lex_convert_state_0_not_open_paren:
 lex_convert_state_0_not_close_paren:
 	# Check if +
 	bne 	$t1, '+', lex_convert_state_0_not_plus
+
+	# If previous token was an operator or left paren
+	# skip
+	ble	$t6, 1, lex_convert_next_itr
+	bgt	$t6, 7, lex_convert_state_0_plus_passed_check
+	bne	$t6, 2, lex_convert_next_itr
 	
+lex_convert_state_0_plus_passed_check:
 	# Store + token
+	li	$t6, 3
 	lui 	$t4, 3
 	ori	$t4, $t4, 1
 	j	lex_convert_store_token
@@ -257,7 +271,19 @@ lex_convert_state_0_not_plus:
 	# Check if -
 	bne	$t1, '-', lex_convert_state_0_not_minus
 
+	# If previous token was an operator, left paren,
+	# or empty, skip and set sign to negative
+	ble	$t6, 1, lex_convert_state_0_invert_sign
+	bgt	$t6, 7, lex_convert_state_0_minus_passed_check
+	bne	$t6, 2, lex_convert_state_0_invert_sign
+	
+lex_convert_state_0_invert_sign:
+	sub	$t7, $zero, $t7
+	j	lex_convert_next_itr
+	
+lex_convert_state_0_minus_passed_check:
 	# Store - token
+	li	$t6, 4
 	lui 	$t4, 4
 	ori	$t4, $t4, 1
 	j	lex_convert_store_token
@@ -268,6 +294,7 @@ lex_convert_state_0_not_minus:
 	bne	$t1, '*', lex_convert_state_0_not_mult
 
 	# Store * token
+	li	$t6, 5
 	lui 	$t4, 5
 	ori	$t4, $t4, 2
 	j	lex_convert_store_token
@@ -277,6 +304,7 @@ lex_convert_state_0_not_mult:
 	bne	$t1, '/', lex_convert_state_0_not_div
 
 	# Store / token
+	li	$t6, 6
 	lui 	$t4, 6
 	ori	$t4, $t4, 2
 	j	lex_convert_store_token
@@ -286,6 +314,7 @@ lex_convert_state_0_not_div:
 	bne	$t1, '=', lex_convert_state_0_not_equals
 
 	# Store / token
+	li	$t6, 7
 	lui 	$t4, 7
 	ori	$t4, $t4, 4
 	j	lex_convert_store_token
@@ -301,6 +330,7 @@ lex_convert_state_0_not_equals:
 
 lex_convert_store_character:
 	# Store variable token
+	li	$t6, 8
 	lui	$t4, 8
 	or	$t4, $t4, $t1
 	j	lex_convert_store_token
@@ -331,10 +361,17 @@ lex_convert_state_1:
 	
 	j lex_convert_next_itr
 
-lex_convert_state_1_exit:	
+lex_convert_state_1_exit:
+	# Invert numeral literal if sign is negative
+	bgt	$t7, 0, lex_convert_state_1_not_neg
+	sub	$t4, $zero, $t4
+	andi	$t4, $t4, 0xffff
+
+lex_convert_state_1_not_neg:
 	# Put token type in upper 16 bits
-	lui	$t7, 9
-	or	$t4, $t4, $t7
+	li	$t6, 9
+	lui	$t8, 9
+	or	$t4, $t4, $t8
 	sw	$t4, expr_buffer1($t3)
 	addiu	$t3, $t3, 4
 	
@@ -346,6 +383,9 @@ lex_convert_store_token:
 	# Store token and increment token index
 	sw	$t4, expr_buffer1($t3)
 	addiu	$t3, $t3, 4
+
+	# Reset sign
+	li	$t7, 1
 
 	# Jump to next iteration
 	j	lex_convert_next_itr
@@ -689,6 +729,7 @@ evaluate_expr:
 	# $t2 as token type
 	# $t3 as operand 1
 	# $t4 as operand 2
+	# $t5 as temp
 	# $t8 as stack pointer
 	li	$t0, 0
 	li	$t1, 0
@@ -759,6 +800,15 @@ evaluate_expr_no_op:
 evaluate_expr_no_variable:
 	# Push to stack
 	andi	$t1, $t1, 0xffff
+	
+	# Check sign bit
+	andi	$t5, $t1, 0x8000
+	beqz	$t5, evaluate_expr_not_negative
+	
+	# Pad sign
+	ori	$t1, $t1, 0xffff0000
+
+evaluate_expr_not_negative:
 	sw	$t1, stack($t8)
 	addiu	$t8, $t8, 4
 
