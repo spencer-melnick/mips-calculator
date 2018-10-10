@@ -3,6 +3,12 @@ str_buffer1:
 	.space 64
 expr_buffer1:
 	.space 128
+expr_buffer2:
+	.space 128
+
+stack:
+	.space 128
+
 prompt_msg:
 	.asciiz ">>>> "
 invalid_msg:
@@ -41,10 +47,7 @@ main:
 	
 	jal 	lex_convert
 	jal	validate_expression
-	
-	li	$a0, 0
-	li	$a1, 512
-	jal	evaluate_expression
+	jal	convert_expr
 	
 	j	main_end
 
@@ -143,7 +146,10 @@ main_end:
 	# Token type 9 - numeric literal
 	# Token type 10 - skip token
 	#
-	# Only numeric literals and variables have token values
+	# Numeric literals and variables have token values
+	# representing either their numeric value or variable
+	# name. Operators have token values equal to their
+	# operator precedence.
 	#
 	# No arguments are needed:
 	# The string is read from str_buffer1 and
@@ -208,6 +214,7 @@ lex_convert_state_0_not_num:
 	
 	# Store ( token
 	lui	$t4, 1
+	ori	$t4, $t4, 0
 	j	lex_convert_store_token
 	
 lex_convert_state_0_not_open_paren:
@@ -216,6 +223,7 @@ lex_convert_state_0_not_open_paren:
 	
 	# Store ) token
 	lui	$t4, 2
+	ori	$t4, $t4, 0
 	j	lex_convert_store_token
 	
 lex_convert_state_0_not_close_paren:
@@ -224,6 +232,7 @@ lex_convert_state_0_not_close_paren:
 	
 	# Store + token
 	lui 	$t4, 3
+	ori	$t4, $t4, 1
 	j	lex_convert_store_token
 
 lex_convert_state_0_not_plus:
@@ -232,6 +241,7 @@ lex_convert_state_0_not_plus:
 
 	# Store - token
 	lui 	$t4, 4
+	ori	$t4, $t4, 1
 	j	lex_convert_store_token
 
 
@@ -241,6 +251,7 @@ lex_convert_state_0_not_minus:
 
 	# Store * token
 	lui 	$t4, 5
+	ori	$t4, $t4, 2
 	j	lex_convert_store_token
 
 lex_convert_state_0_not_mult:
@@ -249,6 +260,7 @@ lex_convert_state_0_not_mult:
 
 	# Store / token
 	lui 	$t4, 6
+	ori	$t4, $t4, 2
 	j	lex_convert_store_token
 
 lex_convert_state_0_not_div:
@@ -257,6 +269,7 @@ lex_convert_state_0_not_div:
 
 	# Store / token
 	lui 	$t4, 7
+	ori	$t4, $t4, 4
 	j	lex_convert_store_token
 
 lex_convert_state_0_not_equals:
@@ -492,168 +505,138 @@ validate_expression_exit:
 	
 
 	########################################################
-	# evaluate_expression
+	# convert_expression
 	########################################################
 	#
-	# evaluate_expression evaluates the expression stored
-	# in expr_buffer1 between offsets $a0 and $a1 (inclusive)
-	# and replaces all tokens except the first token with
-	# skips. The first token is replaced with the expression
-	# result.
-evaluate_expression:
+	# convert_expression converts the expression in
+	# expr_buffer1 from infix notation to postfix notation
+	# following the shunting-yard algorithm. The resulting
+	# expression is stored in expr_buffer2, following the
+	# same token format as lex_convert
+convert_expr:
 	# $t0 as token index
-	# $t1 as token type
-	# $t2 as token value
-	# $t3 as operand 1
-	# $t4 as operand 2
-	# $t5 as operator bit
-	# $t6 as paren counter
-	# $t8 as $a0
-	# $t9 as $a1
-	
-	# Push to the stack
-	addiu	$sp, $sp, -44
-	sw	$ra, 0($sp)
-	sw	$t0, 4($sp)
-	sw	$t1, 8($sp)
-	sw	$t2, 12($sp)
-	sw	$t3, 16($sp)
-	sw	$t4, 20($sp)
-	sw	$t5, 24($sp)
-	sw	$t6, 28($sp)
-	sw	$t7, 32($sp)
-	sw	$t8, 36($sp)
-	sw	$t9, 40($sp)
-	
-	# Load initial values
-	move	$t0, $a0
+	# $t1 as token
+	# $t2 as token type
+	# $t3 as token output index
+	# $t4, $t5 as temp
+	# $t8 as stack pointer
+	# $t9 as stack top token
+	li	$t0, 0
 	li	$t1, 0
 	li	$t2, 0
 	li	$t3, 0
-	li	$t4, 0
-	li	$t5, 0
-	li	$t6, 0
-	move	$t8, $a0
-	move	$t9, $a1		
-	
-	# First, find any parentheses and recursively solve those
-evaluate_expression_paren_loop:
-	# Check if we've reached the end
-	bge	$t0, $t9, evaluate_expression_paren_end
+	li	$t8, 0
+	li	$t9, 0
 
-	# Load token and token type
-	lw	$t2, expr_buffer1($t0)
-	srl	$t1, $t2, 16
-	
-	# Check for end token
-	beq	$t1, 0, evaluate_expression_paren_end
-	
-	# Check for skip token
-	bne	$t1, 10, evaluate_expression_paren_next_itr
-	
-	# Check for (
-	bne	$t1, 1, evaluate_expression_not_open_paren
-	
-	# Increment paren counter
-	addiu	$t6, $t6, 1
-	
-	# If this is the first open paren
-	bne	$t6, 1, evaluate_expression_paren_next_itr
-	# Store index of (
-	move	$a0, $t0
-	j	evaluate_expression_paren_next_itr
-	
-evaluate_expression_not_open_paren:
-	# Check for )
-	bne	$t1, 2, evaluate_expression_not_close_paren
-	
-	# Decrement paren counter
-	subiu	$t6, $t6, 1
-	
-	# If paren counter is 0
-	bnez	$t6, evaluate_expression_paren_next_itr
-	
-	# Store index of )
-	move	$a1, $t0
-	jal	evaluate_expression
-	j evaluate_expression_paren_next_itr
+convert_expr_loop:
+	# Load token value and type
+	lw	$t1, expr_buffer1($t0)
+	srl	$t2, $t1, 16
 
-evaluate_expression_not_close_paren:
+	# Check for end
+	beq	$t2, 0, convert_expr_exit
+
+	# Check if literal or variable
+	blt	$t2, 8, convert_expr_not_value
+
+	# Store in ouput
+	sw	$t1, expr_buffer2($t3)
+	addiu	$t3, $t3, 4
+	j convert_expr_next_itr
+
+convert_expr_not_value:
+	# If left paren
+	bne	$t2, 1, convert_expr_not_left_paren
+
+	# Push to stack
+	sw	$t1, stack($t8)
+	addiu	$t8, $t8, 4
+	move	$t9, $t1
+	j convert_expr_next_itr
+
+convert_expr_not_left_paren:
+	# If right paren
+	bne	$t2, 2, convert_expr_operator
+
+	# $t5 as token type
+	convert_expr_inner_loop1:
+		# Peek token on stack
+		srl	$t5, $t9, 16
+
+		# Exit loop once left paren is found
+		beq	$t5, 1, convert_expr_inner_loop1_end
+
+		# Otherwise pop from the stack onto the result
+		sw	$t9, expr_buffer2($t3)
+		addiu	$t8, $t8, -8
+		lw	$t9, stack($t8)
+		addiu	$t8, $t8, 4
+		addiu	$t3, $t3, 4
+
+		j	convert_expr_inner_loop1
+
+	convert_expr_inner_loop1_end:
+		# Pop without storing for left paren
+		addiu	$t8, $t8, -8
+
+		# Update top stack value
+		lw	$t9, stack($t8)
+		addiu	$t8, $t8, 4
+
+		j	convert_expr_next_itr
+
+
+convert_expr_operator:
+
+	# Get token operator precedence
+	andi	$t4, $t1, 0xffff
 	
-evaluate_expression_paren_next_itr:
+	# Use $t4 as current token precedence
+	# $t5 as stack token precedence
+	convert_expr_inner_loop2:
+		# Get stack token precedence
+		andi	$t5, $t9, 0xffff
+
+		# If current token has higher precedence
+		# than stack token, or stack is at end,
+		# exit loop
+		beq	$t8, 0, convert_expr_inner_loop2_end
+		bgt	$t4, $t5, convert_expr_inner_loop2_end
+
+		# Otherwise pop stack onto result
+		sw	$t9, expr_buffer2($t3)
+		addiu	$t3, $t3, 4
+		addiu	$t8, $t8, -4
+		lw	$t9, stack($t8)
+
+		j convert_expr_inner_loop2
+
+	convert_expr_inner_loop2_end:
+		# Push current token onto stack
+		sw	$t1, stack($t8)
+		addiu	$t8, $t8, 4
+		move	$t9, $t1
+
+
+convert_expr_next_itr:
 	addiu	$t0, $t0, 4
-	j	evaluate_expression_paren_loop
+	j convert_expr_loop
 
-evaluate_expression_paren_end:
-	# $t0 as token index
-	# $t1 as token type
-	# $t2 as token value
-	# $t3 as operand 1
-	# $t4 as operand 2
-	# $t5 as operator bit
-	# $t6 as op 1 index
-	# $t7 as op 2 index
-	# $t8 as $a0
-	# $t9 as $a1
-	move	$t0, $t8
-	li	$t1, 0
-	li	$t2, 0
-	li	$t3, 0
-	li	$t4, 0
-	li	$t5, 0
-	li	$t6, 0
+convert_expr_exit:
 
-evaluate_expression_mult_divide_loop:
-	# Check if we've reached the end
-	bge	$t0, $t9, evaluate_expression_mult_divide_end
+	convert_expr_inner_loop3:
+		# If at the end of the stack, exit
+		beq	$t8, 0, convert_expr_inner_loop3_end
 
-	# Load token and token type
-	lw	$t2, expr_buffer1($t0)
-	srl	$t1, $t2, 16
-	andi	$t2, $t2, 0xffff
-	
-	# Check for end token
-	beq	$t1, 0, evaluate_expression_mult_divide_end
-	
-	# Check for skip token
-	bne	$t1, 10, evaluate_expression_mult_divide_next_itr
-	
-	# If operator bit isn't set
-	bnez	$t5, evaluate_expression_mult_divide_op_set
-	
-	# Store operand value and index
-	move	$t3, $t2
-	move	$t6, $t0
-	
-	j evaluate_expression_mult_divide_next_itr
-	
-evaluate_expression_mult_divide_op_set:
+		# Otherwise pop from the stack onto result
+		sw	$t9, expr_buffer2($t3)
+		addiu	$t3, $t3, 4
+		addiu	$t8, $t8, -4
+		lw	$t9, stack($t8)
 
-evaluate_expression_mult_divide_next_itr:
-	addiu	$t0, $t0, 4
-	j	evaluate_expression_mult_divide_loop
-	
-evaluate_expression_mult_divide_loop_end:
-	
-evaluate_expression_exit:
-	# Pop from the stack
-	lw	$ra, 0($sp)
-	lw	$t0, 4($sp)
-	lw	$t1, 8($sp)
-	lw	$t2, 12($sp)
-	lw	$t3, 16($sp)
-	lw	$t4, 20($sp)
-	lw	$t5, 24($sp)
-	lw	$t6, 28($sp)
-	lw	$t7, 32($sp)
-	lw	$t8, 36($sp)
-	lw	$t9, 40($sp)
-	addiu	$sp, $sp, 44
-	
+		j convert_expr_inner_loop3
+		
+	convert_expr_inner_loop3_end:
+		sw	$zero, expr_buffer2($t3)
+
 	jr	$ra
-	
-	########################################################
-	# End evaluate_expression
-	########################################################
-	
-
