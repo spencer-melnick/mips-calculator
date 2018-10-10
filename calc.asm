@@ -271,6 +271,7 @@ lex_convert_state_0_not_close_paren:
 	ble	$t6, 1, lex_convert_next_itr
 	bgt	$t6, 8, lex_convert_state_0_plus_passed_check
 	beq	$t6, 2, lex_convert_state_0_plus_passed_check
+	j	lex_convert_next_itr
 	
 lex_convert_state_0_plus_passed_check:
 	# Store + token
