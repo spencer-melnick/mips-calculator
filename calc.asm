@@ -437,6 +437,7 @@ validate_expression:
 	# $t1 as previous token
 	# $t2 as current token
 	# $t3 as paren counter
+	# $t4 as value counter
 	# $t6 as previous token type
 	# $t7 as current token type
 	# $t9 as new variable name
@@ -445,6 +446,7 @@ validate_expression:
 	li	$t1, 0
 	li	$t2, 0
 	li	$t3, 0
+	li	$t4, 0
 	li	$t6, 0
 	li	$t7, 0
 	move	$t9, $s0
@@ -507,6 +509,9 @@ validate_expression_not_end:
 	# Get current token variable name
 	andi	$t5, $t2, 0xffff
 	
+	# Increment value counter
+	addiu	$t4, $t4, 1
+	
 	# If using a different variable name, invalidate
 	bne	$t5, $s0, invalid_expression
 	
@@ -565,6 +570,13 @@ validate_expression_not_close_paren:
 	j	validate_expression_next_itr
 
 validate_expression_not_mult_or_divide:
+	# Check for number
+	bne	$t7, 10, validate_expression_not_number
+
+	# Increment value counter
+	addiu	$t4, $t4, 1
+
+validate_expression_not_number:
 
 	j	validate_expression_next_itr
 	
@@ -573,6 +585,11 @@ validate_expression_next_itr:
 	j	validate_expression_loop
 
 validate_expression_exit:
+	# Must have at least 1 variable or numeric literal
+	# in expression
+	beqz	$t4, invalid_expression
+
+	# Store new variable
 	move	$s0, $t9
 	jr	$ra
 	
