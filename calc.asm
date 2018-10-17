@@ -270,7 +270,8 @@ lex_convert_state_0_not_close_paren:
 	# skip
 	ble	$t6, 1, lex_convert_next_itr
 	bgt	$t6, 8, lex_convert_state_0_plus_passed_check
-	bne	$t6, 2, lex_convert_next_itr
+	beq	$t6, 2, lex_convert_state_0_plus_passed_check
+	j	lex_convert_next_itr
 	
 lex_convert_state_0_plus_passed_check:
 	# Store + token
@@ -287,7 +288,7 @@ lex_convert_state_0_not_plus:
 	# or empty, add an inversion operator
 	ble	$t6, 1, lex_convert_state_0_invert_sign
 	bgt	$t6, 8, lex_convert_state_0_minus_passed_check
-	bne	$t6, 2, lex_convert_state_0_invert_sign
+	beq	$t6, 2, lex_convert_state_0_minus_passed_check
 	
 lex_convert_state_0_invert_sign:
 	# Store invert token
@@ -521,6 +522,9 @@ validate_expression_not_end:
 	# Cannot follow a number
 	beq	$t6, 10, invalid_expression
 	
+	# Cannot follow another variable
+	beq	$t6, 9, invalid_expression
+	
 	j	validate_expression_next_itr
 	
 validate_expression_not_variable:
@@ -575,9 +579,12 @@ validate_expression_not_mult_or_divide:
 
 	# Increment value counter
 	addiu	$t4, $t4, 1
-
+	
+	# Number preceeded by number or variable is invalid
+	beq	$t6, 10, invalid_expression
+	beq	$t6, 9, invalid_expression
+	
 validate_expression_not_number:
-
 	j	validate_expression_next_itr
 	
 validate_expression_next_itr:
@@ -589,6 +596,10 @@ validate_expression_exit:
 	# in expression
 	beqz	$t4, invalid_expression
 
+	beq	$t6, 2, validate_expression_final_check_passed
+	blt	$t6, 9, invalid_expression
+
+validate_expression_final_check_passed:
 	# Store new variable
 	move	$s0, $t9
 	jr	$ra
